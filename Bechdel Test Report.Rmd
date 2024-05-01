@@ -1,0 +1,606 @@
+---
+title: "Exploring Gender Bias: Bechdel Test Pass Rates by Film Components"
+author: "Laney Finke.67, Megan Zhao.3738, Abby Kovach.232, Nathan Johnson.9254"
+date: "`r Sys.Date()`"
+output: pdf_document
+fontsize: 12pt
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, result = FALSE}
+#| label: setup
+
+## Good practice to include libraries and functions you will need in a chunk
+## at the beginning of your file
+library(jtools)
+library(patchwork)
+library(tidyverse)
+## functions
+logit <- function(x) log(x/(1 - x))
+invlogit <- function(x) exp(x)/(1 + exp(x))
+
+## This sets the gpplot theme to white for all plots
+## the option `base_size` sets the base font size for all plots
+theme_set(
+    theme_bw(base_size = 8)
+)
+```
+
+# Abstract
+
+The Bechdel Test serves as a tool for evaluating gender representation within films. The test is often used to highlight gender bias in media by showing female roles and their interactions within the film. We are using the *movies* data set, which includes characteristics of 1,573 films. This data set, spanning from 1970 to 2013, is composed of variables such as budget, domestic gross income, runtime, and year. We aim to analyze how these factors influence a movie's likelihood of passing the Bechdel Test. By transforming the data and employing logistic regression on five different models, we seek to predict the probability of a film passing the test based on its characteristics. We will analyze the full model, using year, budget, runtime, and domestic gross income as an explanatory variable passing the Bechdel Test. To start, we will analyze the Null Model and add regressors, while looking at statistical significance, devicance, and AIC. Visualization will depict the relationship between passing rates and explanatory variables, shedding light on potential trends and biases in media portrayal. The project's findings aim to quantify gender bias in films and highlight progress or lack thereof over time, contributing to the discussion on gender equality in the entertainment industry. Based on our methods, and looking at the lowest deviance and AIC, we found that the probability of a film passing the Bechdel Test is best explained by the movie’s year of release and budget. 
+
+# Introduction
+
+The Bechdel Test is a tool used to assess gender representation in movies. The test is
+often used to highlight gender bias in media by showing female roles and their interactions
+within the film. The Bechdel Test is assessed by examining three criteria:
+
+1. The movie must have at least two female characters.
+
+2. These characters must have a conversation with each other.
+
+3. The conversation must be about something other than a man.
+
+If a movie meets all three of the criteria, it is considered to pass the Bechdel test. In our project,
+we aim to see how the proportion of movies that passed the Bechdel test has changed over time (in years) and given the film's budget, domestic gross income, and total runtime. We will also take into
+account other variables and why we are not evaluating them for our model.
+
+The proportion of movies which pass the Bechdel test can be an indicator of gender inequality or bias in popular culture. In the last decade, there has been a greater societal pressure towards gender equality, so an auspicable outcome might be that the proportion of films that pass the test increases over time. Additionally, certain aspects of movies might
+lend towards more implicit gender bias. For example, there might be an association between a bigger budget for movies and meeting the testing criteria because more expensive movies might have more actors, depth of writing, etc. Longer movies might have a higher chance of passing the test, as there could be more interactions. We also want to test
+if the domestic gross income plays a role in whether or not a film passes to see if there is a relationship between viewership and whether movies pass the Bechdel Test. 
+
+We want to bring to light whether such a trend exists to quantify this bias and highlight progress in biased portrayal or lack thereof in media. Therefore, we will analyze the period the film was released, budget, runtime, and domestic gross income as independent variables to predict the probability of a movie passing the Bechdel test.
+
+An article from FiveThirtyEight$^1$ dives further into this issue and the significance of the Bechdel Test in cinematic media.
+
+# Data and Methods
+
+The dataset we plan to use is *movies.csv* which includes the release year, period codes for the
+years (by decade), IMDB scores, the film title, binary variable (pass/fail of Bechdel test), budget,
+domestic and international gross revenue, and metascore ratings from 1970 - 2013. In the
+*movies.csv* dataset, there are 1,794 observations and 34 variables. This data was compiled through BechdelTest.com and TheNumbers.com. TheBechdelTest.com lists over 3,000 movies and provides whether or not the film passes the criterion for the Bechdel Test. Because this data is user submitted, there may be some bias based on the preferences of those who provide submissions. TheNumbers.com provides the budget of these films, adjusted for inflation to the 2013 USD. For our project, we will be focusing on the binary (pass/fail of Bechdel Test), the period (based on the decade the film was
+made), budget, domestic gross income, and total runtime. We retrieved this dataset from the Tidy
+Tuesday Respiratory$^2$. 
+
+
+To visualize the relationships between the films that pass the Bechdel Test to our explanatory variables (period, budget, runtime, domestic gross income), we can plot the proportion, as well as the logit of the proportion of films passing the test against the categories/continuous values of each variable.
+
+A logistic regression model will help us to predict the probability of a particular film passing the Bechdel test given the film’s characteristics as stated above. From this model, we can analyze the statistical significance of each of our explanatory variables. One thing that we can look at to do this is the p-value of each variable and their factors to determine if they provide a significant effect to our model. We can also use the coefficient estimates that this model produces to interpret how each parameter appears to affect the probability of a film passing the Bechdel Test.
+
+To make sure the combination of variables we selected to build our predictive model is best given the information we have contained in variables, an Analysis of Deviance table and Chi-square tests of nested models help determine whether or not we need all of our
+predictors in the context of others to avoid overfitting. A limitation of using a logistic regression model is that we are assuming a linear correlation between the probability of passing the test and our explanatory variables, which may not necessarily be true. We can further analyze whether the logistic model we chose is most appropriate through residual analysis and by comparison of AIC criterion.
+
+To make the data easier to work with, we cleaned the data by removing NA observations and removing unused variables, mutating the budget and domestic income variables to be in million dollar units, and transformed numeric variables (we evaluated year and runtime as continuous variables) and binary operators (pass/fail) to be of the appropriate variable type. The total number of movies and number of passing movies were calculated by year to determine the proportion of movies that passed the Bechdel test in a given year (variable *prop*).
+
+
+```{r, echo = FALSE, warning = FALSE, results = FALSE, message = FALSE}
+# use this code to transfer your plots, tables, models, etc. into the R Markdown file
+library(patchwork)
+library(ggplot2)
+library(tidyverse)
+library(dobson)
+library(readr)
+movies <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-03-09/movies.csv')
+
+
+# cleaning to get the columns needed
+movies_new <- subset(movies, select=c(year, budget_2013, runtime, binary, domgross_2013))
+
+# we need to take the "min" off the of runtime to use it as continuous variable
+movies_new$runtime <- sapply(strsplit(movies_new$runtime, split=" ", fixed=TRUE), function(x) (x[1]))
+
+# creating a new data frame (movies_c = cleaned data)
+movies_c <- movies_new |>
+  summarize(
+      # we will use the year as a continuous variable
+      year = year, 
+            
+      # the domestic gross income is in the millions, so we divide by a million to scale it down
+      domgross = as.numeric(domgross_2013)/1e6, 
+      
+      # making our runtime numeric so we can work with it 
+      runtime = as.numeric(runtime), 
+      
+      # creating the PASS/FAIL binary variable into a dummy variable 
+      binary = case_when(
+        binary == "PASS" ~ 1,
+        binary == "FAIL" ~ 0), 
+      
+      # the budget is also in the millions, so we divide by a million to scale it down
+      budget = budget_2013/1e6
+         )
+
+# checking for NA's
+# there are NA values in the following rows: 18, 179, 203
+movies_c <- na.omit(movies_c)
+
+
+# renumbering the row to remove the NA rows we found
+rownames(movies_c) <- 1:nrow(movies_c)
+movies_c <- movies_c[-c(18, 179, 206),]
+
+# renumbering the rows again now that the NA values are taken out
+rownames(movies_c) <- 1:nrow(movies_c) 
+
+# creating a data frame of the proportion of passes grouped by the period
+# this will be used in order to see if logistic regression is appropriate 
+movies_p <- movies_c |>
+  group_by(year) |>
+  # creating the proportion of passes and fails
+  summarize(tot_pass = sum(binary),
+            tot_movies = length(binary), 
+            prop = tot_pass/tot_movies, 
+            budget = budget, 
+            runtime = runtime, 
+            domgross = domgross)
+```
+
+
+We define as outcome the pass/fail of the Bechdel Test for each film and denote the observed values as $y_i$ with $i = 1, \ldots, n$ with $n = 1573$. Let $y_i = 1$ indicate a pass of the Bechdel Test and $0$ otherwise. 
+
+We assume that each $y_i$ is a realization of a random variables $Y_i \sim \mbox{Bernoulli}(p_i)$ independently, and model the probability of passing the Bechdel Test for each film using the following logistic regression:
+
+$logit(p_i) = \beta_0 + \beta_1 \times \text{year}_i + \beta_2 \times \text{budget}_i + \beta_3 \times \text{runtime}_i + \beta_4  \times \text{domgross}_i$
+
+# Results
+
+To find the best model, we will start with the Null Model: 
+
+$logit(p_i) = \beta_0$
+
+```{r, echo = FALSE}
+#| label: model-summary1
+#| tbl-cap: "Logistic Regression Summary for Null Model"
+
+M1 <- glm(binary ~ 1, family = 'binomial', data = movies_c)
+summ(M1, model.info = FALSE, model.fit = FALSE)
+```
+
+When analyzing the Null Model of the Bechdel Data, we find our intercept to be statistically significant. The intercept, or $\beta_0$ represents the probability a movie passes the Bechdel Test, which in this case is $e^{\hat{\beta_0}} = 0.785$. The Null Model does not take into account any regressors on a movies success of passing the Bechdel Test. The model has a deviance of 2157.9 with 1572 degrees of freedom, as well as an AIC of 2159.9. When looking at the residual plots (See Figure 1 in Appendix), we can see that the residuals are all laying on top of one another. This model is the simplest model we will see, and based on our analysis, it is not a good fit for our data.  
+
+We then move on to a more complex logistic model, adding year as a regressor:
+
+$logit(p_i) = \beta_0 + \beta_1 \times \text{year}_i$
+
+To see if the logistic regression model was appropriate for our data, we look at the relationship between the proportion of successes (pass) versus the release year. We can identify a positive relationship between the proportion of movies that pass the Bechdel Test and Year (See Figure 2).
+
+
+```{r, echo = FALSE}
+#| label: model-summary2
+#| tbl-cap: "Logistic Regression Summary for Model with Year"
+
+M2 <- glm(binary ~ year, family = 'binomial', data = movies_c)
+summ(M2, model.info = FALSE, model.fit = FALSE)
+```
+
+Next, we analyzed the a logistic regression model with year. We fit the second model with year as a regressor, and our results indicate that year is a statistically significant variable for our model. The year coefficient, or $\beta_1$, is the multiplicative change in the odds of passing the Bechdel Test with a one unit increase in the year of the films release date is $e^{\hat{\beta_1}}=1.019$. Indicating that there is a positive relationship between the probability of passing the Bechdel Test with an increase in the year. The Year Model has a Deviance of 2146.6 with 1571 degrees of freedom, and the model as an AIC of 2150.6 (See Table 1). This means that the model with the Year is better than the Null Model alone because of the decrease in deviance and AIC. Based on the plots in Figure 2 (See Appendix), an increase in time (Year of Release) is associated with an increase in the logit of the probability that a movie passes the Bechdel Test. This indicates a good fit for logistic regression.  The residual plots for this model (See Figure 3 in Appendix) are consistent with those of a Bernoulli logistic regression model.
+
+```{r, echo = FALSE}
+M3 <- glm(binary ~ year + budget, family = binomial, data = movies_c)
+summ(M3, model.info = FALSE, model.fit = FALSE)
+```
+
+The next model we analyzed uses year and budget as regressors.
+
+We then move on to a more complex logistic model, and we analyzed uses year and budget as regressors: 
+
+$logit(p_i) = \beta_0 + \beta_1 \times \text{year}_i + \beta_2 \times \text{budget}_i$
+
+We looked at the proportion of movies that passed the Bechdel Test in relation to the budget (See Figure 4). This model indicates that the new regressor `budget` is also statistically significant. We can see that the average budget of films that pass the Bechdel Test is lower than that of films that fail (see Boxplot 1). We can also observe from the model that there is a negative relationship between budget and passing the Bechdel Test, with the multiplicative change in odds of passing the test being -0.01, and a one unit increase in budget (millions of dollars) being $e^{\beta_2} = 0.993$. This model produces a deviance of 2102.299 and AIC of 2108.299 respectively, indicating that this model is a better fit that all previous models explored due to having both a lower deviance and AIC (see Table 1). Overall, this model suggests that there is a decrease in the logit of a probability associated with an increase in budget.  
+  
+Our next model will add on runtime as a regressor to the previous model:
+
+$logit(p_i) = \beta_0 + \beta_1 \times year_i + \beta_2 \times budget_i + \beta_3 \times runtime_i$
+
+We can look at the summary for this model to indicate whether or not we should include runtime in our model or not.
+
+```{r, echo = FALSE}
+M4 <- glm(binary ~ year + budget + runtime, family = binomial, data = movies_c)
+summ(M4, model.info = FALSE, model.fit = FALSE)
+```
+
+Firstly, the runtime coefficient, $\beta_3$, is 0 which suggests that it has no correlation with the logit of the Bechdel test. To determine whether the new regressor 'runtime' is statistically significant, we can look at the p-value of runtime. Since the p-value is 0.7 > 0.05, we can say that runtime is not a statistically significant regressor. To add onto this, we can look at graphs comparing the proportion of movies that passed the Bechdel test against runtime as well as the logit of movies that passed the Bechdel test against runtime (see Figure 6). When we look at these, we can tell clearly that runtime has zero impact on either the proportion or logit of movies that pass the Bechdel test; however, we may want to look at transforming runtime as it may perform better in log scale. This assumption comes from the fact that the deviance and pearson residual plots of this model suggest an unequal variance across predictor values.
+
+```{r, echo = FALSE}
+M4t <- glm(binary ~ year + budget + log(runtime), family = binomial, data = movies_c)
+summ(M4t, model.info = FALSE, model.fit = FALSE)
+```
+
+Using a logarithmic transformation does give us an estimate of -0.05 for log(runtime) which looks hopeful, but the p-value associated with runtime is now even higher than before. As such, we can safely say runtime would not be significant in our model.
+
+
+Lastly, we want to see if adding domestic gross income of the movie in its release year as a predictor variable to our regression model has a significant effect on its ability to predict the outcome of passing the Bechdel Test. Because we found runtime to add no significant extra meaning as a regressor after year and budget, we will add domestic gross income to the the model: 
+
+
+$logit(p_i) = \beta_0 + \beta_1 \times year_i + \beta_2 \times budget_i + \beta_3 \times domgross_i$
+
+
+```{r, echo = FALSE}
+#| label: model-summary3
+#| tbl-cap: "Logistic Regression Summary for Model with Year, Budget, and Domestic Gross Income"
+
+M5 <- glm(binary ~ year + budget + domgross, family = binomial, data = movies_c)
+summ(M5, model.info = FALSE, model.fit = FALSE)
+#summary(M5)
+```
+
+We will first look at the proportion of movies that passed given the domestic income to see if there is a relationship (See Figure 9), and then we will draw conclusions from our summary. The estimated coefficient $\hat{\beta_3}$ is -6.630e-05 and has a p-value of 0.90, so there is insignificant evidence that the added regressor of domestic gross income does significantly (to a significance of $\alpha = 0.05$) improves the model's ($logit(p_i) = \beta_0 + \beta_1 \times year_i + \beta_2 \times budget_i$) fit or explanatory power. Therefore, we prefer to use only year and budget as explanatory variables for $logit(p_i)$. In the context of the movie, the multiplicative change in odds of a movie passes the Bechdel Test associated with a one unit (million dollar) increase in domestic gross income is $e^{-6.630e-05} \approx 1$; in other words, there is scarcely a change in odds, as is supported by the high AIC 2110.3 (See Table 1). 
+
+# Conclusion
+
+To model the log odds of a movie in the *movies* dataset passing the Bechdel test, we fit the generalized linear model:
+
+$logit(p_i) = \beta_0 + \beta_1 \times \text{year}_i + \beta_2 \times \text{budget}_i = -44.823126 + 0.022441\times \text{year}_i-0.006549 \times \text{budget}_i$
+
+
+- $e^{\beta_1} = 0.022441$ is the the multiplicative change in odds of passing the test given a one unit increase in year holding all else constant. 
+
+- $e^{\beta_2} = -0.006549$ is the the multiplicative change in odds of passing the test given a one unit increase in budget (millions of dollars) holding year constant and all else constant. 
+
+Overall, we found that runtime of a movie and domestic gross income are not significant towards the prediction of a film passing the Bechdel test in the context of year and budget as predictors. Based on the positive value of $\hat{\beta_1}$ and the plot of the passing rate against the covariate year, movies have a higher probability of passing the Bechdel Test as year increases (becomes more recent); on the other hand, the negative coefficient of the budget covariate, $\hat{\beta_2}$, and the boxplots of passing and nonpassing movie budgets, the average budget of movies that pass the test is lower than those which do not pass the test. 
+
+The predictions garnered by this model can be useful in the industry for things like holding the film industry accountable, or film budget allocation: if studios know that certain types of movies (with specific budgets and released in certain years) are more likely to pass the Bechdel Test, they may choose to allocate more resources to such projects. By tracking trends in Bechdel Test results over different years and budget ranges, stakeholders can monitor progress and identify areas for improvement in terms of promoting gender equality and representation. 
+
+### References
+
+Hickey, Walt. (2014, Apr 1). "The Dollar-And-Cents Case Against Hollywood’s Exclusion of Women." FiveThirtyEight, https://fivethirtyeight.com/features/the-dollar-and-cents-case-against-hollywoods-exclusion-of-women/.
+
+R4DS Online Learning Community. (2023). Tidy Tuesday: A weekly social data project. https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-03-09/readme.md.
+
+\newpage
+
+# Appendix
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, result = FALSE}
+M1 <- glm(binary ~ 1, family = binomial, data = movies_c)
+# residuals for null model 
+par(mfrow = c(1, 2))
+
+# gets the fitted values
+fitted <- M1$fitted.values
+
+# calculates the residuals
+r <- resid(M1, type = "pearson") # Pearson residuals
+d <- resid(M1, type = "deviance") # Deviance residuals
+
+# creates data frame for plotting
+resid_df <- data.frame(fitted = fitted, pearson = r, deviance = d)
+
+# will plot the deviance residuals and fitted values for null model 
+plot1 = ggplot(resid_df, aes(x = fitted, y = deviance)) + geom_point() +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Deviance residuals")
+
+# will plot the pearson residuals and fitted values for null model 
+plot2 = ggplot(resid_df, aes(x = fitted, y = pearson)) + geom_point() +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Pearson residuals")
+
+# Arrange multiple plots using patchwork
+plot_combined <- plot1 + plot2
+```
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Residual Plots for Model 1
+#| fig-cap: "Left side panel shows the distribution of the deviance residuals for the Null Model. The right side panel shows the distribution of the pearson residuals for the Null Model."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combined
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, result = FALSE}
+plot_prop <- ggplot(movies_p, aes(x= year, y = prop ))
+plot1 = plot_prop + geom_point(size=0.5) + labs(title = "Proportion Pass vs. Year")
+
+logit_movies <- movies_p |>
+  group_by(year) |>
+  summarize(logit_movies_p = log(prop/(1-prop)))
+
+plot_logit <- ggplot(logit_movies, aes(x=year))
+plot2 = plot_logit + geom_point(aes(y=logit_movies_p), size = 0.5) + labs(title = "Logit(Bechdel Test) vs. Year")
+
+plot_combined <- plot1 + plot2
+```
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Proportion Analysis Plots for Year
+#| fig-cap: "Left side panel shows the relationship between the proportion of films that pass the Bechdel Test for each year of release. The right side panel shows the logit of the proportion of films that pass the Bechdel Test for each year of release."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combined
+```
+
+
+
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
+M2 <- glm(binary ~ year, family = binomial, data = movies_c)
+# residuals for null model 
+par(mfrow = c(1, 2))
+
+# gets the fitted values
+fitted <- M2$fitted.values
+
+# calculates the residuals
+r <- resid(M2, type = "pearson") # Pearson residuals
+d <- resid(M2, type = "deviance") # Deviance residuals
+
+# creates data frame for plotting
+resid_df <- data.frame(fitted = fitted, pearson = r, deviance = d)
+
+# will plot the deviance residuals and fitted values for null model 
+plot1 = ggplot(resid_df, aes(x = fitted, y = deviance)) + geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Deviance residuals") + geom_smooth()
+
+# will plot the pearson residuals and fitted values for null model 
+plot2 = ggplot(resid_df, aes(x = fitted, y = pearson)) + geom_point(size = 0.5) +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Pearson residuals") + geom_smooth()
+
+plot_combined <- plot1 + plot2
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Residual Plots for Model 2
+#| fig-cap: "Left side panel shows the distribution of the deviance residuals for the Model with Year as a regressor. The right side panel shows the distribution of the pearson residuals for the Model with Year as a regressor."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combined
+```
+  
+\newpage
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#plots for model 3
+
+#pulling all movies based on if they pass or fail
+movies_pass = movies_c[movies_c$binary == 1, ]
+movies_fail = movies_c[movies_c$binary == 0, ]
+mean_budget_pass = mean(movies_pass$budget)
+mean_budget_fail = mean(movies_fail$budget)  
+```
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+plot_prop <- ggplot(movies_p, aes(x= budget, y = prop ))
+plot1 <- plot_prop + geom_point(size=0.5) + labs(title = "Proportion Pass vs. Budget")
+
+logit_movies <- movies_p |>
+  group_by(budget) |>
+  summarize(logit_movies_p = log(prop/(1-prop)))
+
+plot_logit <- ggplot(logit_movies, aes(x=budget))
+plot2 <- plot_logit + geom_point(aes(y=logit_movies_p), size = 0.5) + labs(title = "Logit(Bechdel Test) vs. Budget")
+
+plot_combined <- plot1 + plot2
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Proportion Analysis Plots
+#| fig-cap: "Left side panel shows the relationship between the proportion of films that pass the Bechdel Test vs the budget in millions of dollars. The right side panel shows the logit of the proportion of films that pass the Bechdel Test vs the budget in millions of dollars."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combined
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#boxplot budget vs pass/fail
+#| label : Distribution of Budget Between Movies that Pass or Fail
+#| fig-cap: "This plot indicates that the average budgets of films that pass the Bechdel Test are lower than films that fail."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+boxplot(movies_c$budget ~ factor(movies_c$binary), col = c("red", "blue"), ylab = "Fail/Pass", xlab = "Budget", horizontal = TRUE, main = "Boxplot 1")
+```
+This plot indicates that the average budgets of films that pass the Bechdel Test are lower than films that fail.
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# residual plots
+fitted = M3$fitted.values
+
+pearson_resids = resid(M3, type = "pearson")
+deviance_resids = resid(M3, type = "deviance")
+
+resid_df = data.frame(fitted = fitted, pearson = pearson_resids, deviance = deviance_resids)
+
+pearson_plot = ggplot(resid_df, aes(x = fitted, y = pearson)) + geom_hline(yintercept = 0, col = 2) + geom_point() + geom_smooth() + labs(title = "Pearson Residuals")
+
+deviance_plot = ggplot(resid_df, aes(x = fitted, y = deviance)) + geom_hline(yintercept = 0, col = 2) + geom_point() + geom_smooth() + labs(title = "Deviance Residuals")
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Residual Plots for Model 3
+#| fig-cap: "These figures display the deviance and pearson residuals for the model using year and budget as regressors."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+residual_graphs = deviance_plot + pearson_plot
+
+residual_graphs
+
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE, result = FALSE}
+plot_proprun <- ggplot(movies_p, aes(x= runtime, y = prop ))
+plot1run = plot_prop + geom_point(size=0.5) + labs(title = "Proportion Pass vs. Runtime (minutes)")
+
+logit_movies <- movies_p |>
+  group_by(runtime) |>
+  summarize(logit_movies_p = log(prop/(1-prop)))
+
+plot_logitrun <- ggplot(logit_movies, aes(x=runtime))
+plot2run = plot_logit + geom_point(aes(y=logit_movies_p), size = 0.5) + labs(title = "Logit(Bechdel Test) vs. Runtime (minutes)")
+
+plot_combinedrun <- plot1run + plot2run
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Proportion Analysis Plots for Runtime
+#| fig-cap: "Left side panel shows the relationship between the proportion of films that pass the Bechdel Test for its respective runtime in minutes. The right side panel shows the logit of the proportion of films that pass the Bechdel Test for its respective runtime in minutes."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combinedrun
+```
+
+```{r, echo = FALSE, warning = FALSE, results = FALSE, message = FALSE, fig.width = 3, fig.height = 2}
+# residuals for null model 
+par(mfrow = c(1, 2))
+
+# gets the fitted values
+fitted <- M4$fitted.values
+
+# calculates the residuals
+r <- resid(M4, type = "pearson") # Pearson residuals
+d <- resid(M4, type = "deviance") # Deviance residuals
+
+# creates data frame for plotting
+resid_df <- data.frame(fitted = fitted, pearson = r, deviance = d)
+
+# will plot the deviance residuals and fitted values for null model 
+deviance_run = ggplot(resid_df, aes(x = fitted, y = deviance)) + geom_point() +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Deviance residuals")
+
+# will plot the pearson residuals and fitted values for null model 
+pearson_run = ggplot(resid_df, aes(x = fitted, y = pearson)) + geom_point() +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Deviance residuals")
+
+combined_resids_run = deviance_run + pearson_run
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Deviance Analysis Plots for Runtime
+#| fig-cap: "The left side panel shows the relationship between the deviance residuals and runtime in minutes. The right side panel shows the relationship between the pearson residuals and runtime in minutes. Both suggest unequal variances across the range of runtime which suggests non-normaility in residuals."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+combined_resids_run
+```
+
+
+
+```{r , echo = FALSE, warning = FALSE, message = FALSE}
+# resid vs fitted
+fitted_values <- fitted(M5)
+d <- resid(M5, type = "deviance") # Deviance residuals
+p <- resid(M5, type = "pearson") # Pearson residuals
+
+resid_df <- data.frame(fitted = fitted_values, deviance = d, pearson = p)
+
+```
+
+```{r , echo = FALSE, warning = FALSE, message = FALSE}
+plot1 <- ggplot(resid_df, aes(x = fitted, y = deviance)) + geom_point() + geom_hline(yintercept = 0, col = 2) +
+  labs(title = "Deviance residuals vs Fitted") + geom_smooth()
+
+plot2 <- ggplot(resid_df, aes(x = fitted, y = pearson)) + geom_point() +
+  geom_hline(yintercept = 0, col = 2) + labs(title = "Deviance residuals vs Fitted") + geom_smooth()
+
+plot_combined <- plot1 + plot2
+```
+
+```{r , echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Residual Plots for Model 5
+#| fig-cap: "The left side panel shows the relationship between the deviance residuals and the fitted values for domestic gross income in millions. The right side panel shows the relationship between the pearson residuals and the fitted values for domestic gross income in millions."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combined
+```
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+plot_prop <- ggplot(movies_p, aes(x= domgross, y = prop ))
+plot1 = plot_prop + geom_point(size=0.5) + labs(title = "Proportion Pass vs. Domestic Gross Income (Release Year)")
+
+logit_movies <- movies_p |>
+  summarize(logit_movies_p = log(prop/(1-prop)), domgross = domgross)
+
+plot_logit <- ggplot(logit_movies, aes(x=domgross))
+plot2 = plot_logit + geom_point(aes(y=logit_movies_p), size = 0.5) + labs(title = "Logit(Bechdel Test) vs. Domestic Gross Income (Release Year")
+
+plot_combined <- plot1 + plot2
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#| label: Proportion Plots with Domestic Gross Income
+#| fig-cap: "Left side panel shows the relationship between the proportion of films that pass the Bechdel Test for its respective domestic gross income in millions. The right side panel shows the logit of the proportion of films that pass the Bechdel Test for its respective domestic gross income in millions"
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+# Display the combined plot
+plot_combined
+
+```
+
+
+\newpage
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+
+#pulling all movies based on if they pass or fail
+mean_dg_pass = mean(movies_pass$domgross)
+mean_dg_fail = mean(movies_fail$domgross)  
+```
+
+
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+#boxplot budget vs pass/fail
+#| label : Distribution of Budget Between Movies that Pass or Fail
+#| fig-cap: "This plot indicates that the average budgets of films that pass the Bechdel Test are lower than films that fail."
+#| fig-width: 6
+#| fig-height: 3
+#| fig-show: hold
+
+ boxplot(movies_c$domgross ~ factor(movies_c$binary), col = c("red", "blue"), ylab = "Fail/Pass", xlab = "Domestic Gross Income", horizontal = TRUE, main = "Boxplot 2")  
+
+```
+
+This plot indicates that the average budgets of films that pass the Bechdel Test are lower than films that fail.
+
+
+
+### Table of Deviance and AIC for Each Model
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# this is creating table of each model with its deviance and AIC
+library(knitr)
+data = matrix(c(M1$deviance, M1$aic, M2$deviance, M2$aic, M3$deviance, M3$aic, M4$deviance, M4$aic, M5$deviance, M5$aic), nrow = 5, ncol = 2, byrow = TRUE)
+rownames(data) = c("binary ~ 1", "binary ~ year", "binary ~ year + budget", "binary ~ year + budget + runtime", "binary ~ year + budget + domestic gross income")
+colnames(data) = c("Deviance", "AIC")
+final = as.table(data)
+kable(final, caption = "Model Comparisons") 
+``` 
